@@ -1,5 +1,6 @@
 package edu.berkeley.cs186.database.index;
 
+import edu.berkeley.cs186.database.cli.parser.ParseException;
 import edu.berkeley.cs186.database.common.Buffer;
 import edu.berkeley.cs186.database.common.Pair;
 import edu.berkeley.cs186.database.concurrency.LockContext;
@@ -147,24 +148,47 @@ class LeafNode extends BPlusNode {
     @Override
     public LeafNode get(DataBox key) {
         // TODO(proj2): implement
-
-        return null;
+        return this;
     }
 
     // See BPlusNode.getLeftmostLeaf.
     @Override
     public LeafNode getLeftmostLeaf() {
         // TODO(proj2): implement
-
-        return null;
+        return this;
     }
 
     // See BPlusNode.put.
     @Override
     public Optional<Pair<DataBox, Long>> put(DataBox key, RecordId rid) {
         // TODO(proj2): implement
+        if (keys.contains(key)) {
+            throw new BPlusTreeException("insert duplicate entries with the same key");
+        }
 
-        return Optional.empty();
+        // insert (k, r) pair
+        int index = InnerNode.numLessThan(key, keys);
+        keys.add(index, key);
+        rids.add(index, rid);
+
+        if (keys.size() <= metadata.getOrder() * 2) {
+            // Case 1: If inserting the pair (k, r) does NOT cause leaf to overflow, Optional.empty() is returned.
+            sync();
+            return Optional.empty();
+        } else {
+            // Case 2: If inserting the pair (k, r) does cause the node n to overflow, a pair (split_key, right_node_page_num) ir returned.
+            List<DataBox> right_keys = keys.subList(metadata.getOrder(), keys.size());
+            List<RecordId> right_rids = rids.subList(metadata.getOrder(), rids.size());
+
+            keys = keys.subList(0, metadata.getOrder());
+            rids = rids.subList(0, metadata.getOrder());
+
+            LeafNode new_rightSibling = new LeafNode(metadata, bufferManager, right_keys, right_rids, rightSibling, treeContext);
+
+            rightSibling = Optional.of(new_rightSibling.getPage().getPageNum());
+            sync();
+            return Optional.of(new Pair(right_keys.get(0), new_rightSibling.getPage().getPageNum()));
+        }
     }
 
     // See BPlusNode.bulkLoad.
@@ -180,7 +204,12 @@ class LeafNode extends BPlusNode {
     @Override
     public void remove(DataBox key) {
         // TODO(proj2): implement
-
+        int index = keys.indexOf(key);
+        if (index >= 0) {
+            keys.remove(index);
+            rids.remove(index);
+            sync();
+        }
         return;
     }
 
